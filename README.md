@@ -90,3 +90,8 @@ To repeat the hardware check (moves the scanner and captures whatever is on the 
 ```
 
 The test exports to `/tmp/brother-studio-hardware-test.pdf`.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). Brother Studio is an independent project and is
+not affiliated with or endorsed by Brother Industries.
