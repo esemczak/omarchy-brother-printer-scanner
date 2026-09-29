@@ -33,8 +33,20 @@ ApplicationWindow {
     palette.button: surface
     palette.buttonText: fg
     palette.highlight: accent
-    palette.highlightedText: bg
+    palette.highlightedText: fg
     palette.placeholderText: muted
+    palette.alternateBase: bg
+    palette.light: surface
+    palette.midlight: surface
+    palette.mid: edge
+    palette.dark: bg
+    palette.shadow: bg
+    palette.brightText: fg
+    palette.toolTipBase: surface
+    palette.toolTipText: fg
+    palette.link: accent
+    palette.linkVisited: accent
+    palette.accent: accent
     NumberAnimation { id: pageTransition; target: workspace; property: "opacity"; from: 0.25; to: 1; duration: win.reducedMotion ? 0 : 220; easing.type: Easing.OutCubic }
     onClosing: function(close) {
         if (!closingConfirmed && (studio.busy || studio.pages.length > 0)) {
@@ -130,6 +142,8 @@ ApplicationWindow {
 
     FileDialog {
         id: exportDialog
+        objectName: "exportDialog"
+        options: FileDialog.DontUseNativeDialog
         title: "Save your document"
         fileMode: FileDialog.SaveFile
         nameFilters: ["PDF document (*.pdf)", "PNG image (*.png)", "JPEG image (*.jpg)"]
@@ -138,12 +152,16 @@ ApplicationWindow {
     }
     FileDialog {
         id: importDialog
+        objectName: "importDialog"
+        options: FileDialog.DontUseNativeDialog
         title: "Add an image to your document"
         nameFilters: ["Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp)"]
         onAccepted: studio.importImage(selectedFile)
     }
     FileDialog {
         id: printDialog
+        objectName: "printDialog"
+        options: FileDialog.DontUseNativeDialog
         title: "Choose a file to print"
         nameFilters: ["Printable documents (*.pdf *.png *.jpg *.jpeg *.txt *.ps)", "All files (*)"]
         onAccepted: studio.choosePrintFile(selectedFile)
@@ -278,10 +296,10 @@ ApplicationWindow {
                         spacing: 9
                         Caption { text: "SCAN SETTINGS"; Layout.bottomMargin: 8 }
                         Label { text: "Source"; color: win.muted; font.pixelSize: 12 }
-                        Field { id: scanSource; model: studio.sources; enabled: !studio.busy }
+                        Field { id: scanSource; objectName: "scanSource"; model: studio.sources; enabled: !studio.busy }
                         Label { text: "Colour mode"; color: win.muted; font.pixelSize: 12; Layout.topMargin: 8 }
                         Field {
-                            id: scanMode; model: studio.modes; enabled: !studio.busy
+                            id: scanMode; objectName: "scanMode"; model: studio.modes; enabled: !studio.busy
                             displayText: currentText === "Gray" ? "Grayscale" : currentText === "Color" ? "Colour" : currentText
                         }
                         RowLayout {
@@ -290,7 +308,7 @@ ApplicationWindow {
                             Item { Layout.fillWidth: true }
                             Label { text: "DPI"; color: win.muted; font.pixelSize: 10 }
                         }
-                        Field { id: scanDpi; model: studio.resolutions; currentIndex: Math.max(0, studio.resolutions.indexOf("300")); enabled: !studio.busy }
+                        Field { id: scanDpi; objectName: "scanResolution"; model: studio.resolutions; currentIndex: Math.max(0, studio.resolutions.indexOf("300")); enabled: !studio.busy }
                         Label { text: "Page size"; color: win.muted; font.pixelSize: 12; Layout.topMargin: 8 }
                         Field { id: scanSize; model: ["A4", "Letter", "Maximum"]; enabled: !studio.busy }
                         Button {
@@ -313,6 +331,7 @@ ApplicationWindow {
                             wrapMode: Text.WordWrap; color: win.muted; font.pixelSize: 12; lineHeight: 1.4; Layout.fillWidth: true
                         }
                         Action {
+                            objectName: "startScan"
                             text: studio.operation.indexOf("Scanning") === 0 ? "Stop scanning" : studio.pages.length ? "+  Scan another page" : "Start scanning  →"
                             primary: true; Layout.fillWidth: true; Layout.topMargin: 8; implicitHeight: 48
                             enabled: studio.operation.indexOf("Scanning") === 0 || (!studio.busy && studio.online)

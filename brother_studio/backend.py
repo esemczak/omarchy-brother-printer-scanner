@@ -46,6 +46,7 @@ class Worker(QObject):
 
 class Backend(QObject):
     changed = Signal()
+    capabilitiesChanged = Signal()
     themeChanged = Signal()
 
     def __init__(self):
@@ -90,9 +91,9 @@ class Backend(QObject):
     error = Property(bool, lambda self: self._error, notify=changed)
     online = Property(bool, lambda self: self._online, notify=changed)
     device = Property(str, lambda self: self._device, notify=changed)
-    sources = Property("QStringList", lambda self: self._sources, notify=changed)
-    modes = Property("QStringList", lambda self: self._modes, notify=changed)
-    resolutions = Property("QStringList", lambda self: self._resolutions, notify=changed)
+    sources = Property("QStringList", lambda self: self._sources, notify=capabilitiesChanged)
+    modes = Property("QStringList", lambda self: self._modes, notify=capabilitiesChanged)
+    resolutions = Property("QStringList", lambda self: self._resolutions, notify=capabilitiesChanged)
     pages = Property("QVariantList", lambda self: self._pages, notify=changed)
     queues = Property("QStringList", lambda self: [q["name"] for q in self._queues], notify=changed)
     jobs = Property("QVariantList", lambda self: self._jobs, notify=changed)
@@ -164,9 +165,12 @@ class Backend(QObject):
         def complete(result):
             self._device, help_text = result
             self._online = True
-            self._sources = option_values(help_text, "source") or ["Flatbed"]
-            self._modes = option_values(help_text, "mode") or ["Color", "Gray"]
-            self._resolutions = option_values(help_text, "resolution") or ["300"]
+            sources = option_values(help_text, "source") or ["Flatbed"]
+            modes = option_values(help_text, "mode") or ["Color", "Gray"]
+            resolutions = option_values(help_text, "resolution") or ["300"]
+            if (sources, modes, resolutions) != (self._sources, self._modes, self._resolutions):
+                self._sources, self._modes, self._resolutions = sources, modes, resolutions
+                self.capabilitiesChanged.emit()
             self.notify("Connected · Brother MFC-L2800DW")
             QTimer.singleShot(0, self.refresh_printer)
 

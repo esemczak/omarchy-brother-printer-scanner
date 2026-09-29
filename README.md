@@ -29,7 +29,7 @@ Scan another pass for reverse sides and reorder the thumbnails with the arrow bu
 
 The preview shows the selected page. Rotate, reorder, remove or import images.
 PDF exports contain all pages in workspace order; PNG/JPEG exports contain only
-the selected page. Export is atomic, with the native save dialog handling overwrite
+the selected page. Export is atomic, with the themed Qt save dialog handling overwrite
 confirmation. Ctrl+S exports, Ctrl+O imports, Escape stops scanning.
 
 Scan pages are temporary until exported. The app warns before closing a session
@@ -77,7 +77,7 @@ PDF/image export, atomic failure, page operations, print options, worker threadi
 and rendering all four workspaces. Hardware availability depends on the network,
 scanner power and installed system backends; errors appear in the status bar.
 
-Verified on this machine: 17 checks passed; QML lint and all workspace renders
+Verified on this machine: 19 checks passed; QML lint and all workspace renders
 passed; the real printer at `192.168.1.146` produced an 827 × 1169 pixel flatbed
 scan at 100 DPI and a PDF export. Hyprland confirmed the application window is
 native Wayland (`xwayland: false`). A printer queue has not yet been created;
@@ -90,6 +90,11 @@ To repeat the hardware check (moves the scanner and captures whatever is on the 
 ```
 
 The test exports to `/tmp/brother-studio-hardware-test.pdf`.
+
+Regression checks also verify that selected DPI/source/colour settings survive
+scan status updates, and all file selectors keep a consistent palette through
+live dark/light theme changes. File selectors use the app's Qt Quick style and
+complete Omarchy palette rather than a separately styled platform dialog.
 
 ## Licence
 
