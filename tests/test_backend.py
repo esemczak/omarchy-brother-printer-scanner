@@ -1,0 +1,156 @@
+import os
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import tempfile
+import time
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from PIL import Image
+from PySide6.QtCore import QUrl, QThread
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuick import QQuickWindow
+
+from brother_studio.backend import Backend
+
+APP = QGuiApplication.instance() or QGuiApplication([])
+
+
+def await_idle(backend, seconds=4):
+    until = time.monotonic() + seconds
+    while backend.busy and time.monotonic() < until:
+        APP.processEvents()
+        time.sleep(0.01)
+    APP.processEvents()
+    if backend.busy:
+        raise AssertionError("Background worker did not finish")
+
+
+class BackendTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.folder.name})
+        self.env.start()
+        self.backend = Backend()
+
+    def tearDown(self):
+        self.backend.cleanup()
+        self.backend.theme_timer.stop()
+        self.env.stop()
+        self.folder.cleanup()
+
+    def test_background_completion_on_gui_thread(self):
+        threads = []
+        self.backend.start("Test", lambda _: 42, lambda result: threads.append((QThread.currentThread(), result)))
+        await_idle(self.backend)
+        self.assertEqual(threads, [(APP.thread(), 42)])
+
+    def test_worker_errors_recover_controls(self):
+        def fail(_):
+            raise RuntimeError("Scanner is busy")
+        self.backend.start("Scan", fail, lambda _: None)
+        await_idle(self.backend)
+        self.assertTrue(self.backend.error)
+        self.assertEqual(self.backend.message, "Scanner is busy")
+        self.assertFalse(self.backend.busy)
+
+    def test_feeder_end_keeps_complete_pages(self):
+        self.backend._device = "test scanner"
+        def args(device, source, mode, dpi, size, directory, *extra):
+            code = ("from PIL import Image; import sys; "
+                    f"Image.new('RGB',(30,50),'white').save({str(directory / 'page-0001.png')!r}); "
+                    "sys.exit(7)")
+            return [sys.executable, "-c", code]
+        with patch("brother_studio.backend.scan_args", args):
+            self.backend.scan("ADF", "Color", 300, "A4", 0, 0)
+            await_idle(self.backend)
+        self.assertFalse(self.backend.error)
+        self.assertEqual(len(self.backend.pages), 1)
+
+    def test_cancellation_terminates_acquisition(self):
+        self.backend._device = "test scanner"
+        with patch("brother_studio.backend.scan_args", return_value=[sys.executable, "-c", "import time; time.sleep(30)"]):
+            self.backend.scan("Flatbed", "Color", 300, "A4", 0, 0)
+            time.sleep(0.05)
+            self.backend.cancelScan()
+            await_idle(self.backend)
+        self.assertFalse(self.backend.error)
+        self.assertEqual(self.backend.message, "Scan cancelled")
+        self.assertEqual(self.backend.pages, [])
+
+    def test_empty_feeder_reports_load_instruction(self):
+        self.backend._device = "test scanner"
+        with patch("brother_studio.backend.scan_args", return_value=[sys.executable, "-c", "import sys; sys.exit(7)"]):
+            self.backend.scan("ADF", "Color", 300, "A4", 0, 0)
+            await_idle(self.backend)
+        self.assertTrue(self.backend.error)
+        self.assertIn("Load the feeder", self.backend.message)
+
+    def test_import_rotate_reorder_export(self):
+        original = Path(self.folder.name) / "original.png"
+        Image.new("RGB", (40, 80), "white").save(original)
+        self.backend.importImage(QUrl.fromLocalFile(str(original)))
+        self.backend.importImage(QUrl.fromLocalFile(str(original)))
+        self.backend.rotatePage(0)
+        self.assertEqual(self.backend.pages[0]["width"], 80)
+        self.backend.movePage(0, 1)
+        self.assertEqual(self.backend.pages[1]["width"], 80)
+        target = Path(self.folder.name) / "export.pdf"
+        self.backend.export(QUrl.fromLocalFile(str(target)), 0)
+        await_idle(self.backend)
+        self.assertTrue(target.is_file())
+        self.assertIn(str(target), self.backend.recent)
+        self.backend.removePage(0)
+        self.assertEqual(len(self.backend.pages), 1)
+        self.backend.clearPages()
+        self.assertEqual(self.backend.pages, [])
+
+    def test_queue_selection_excludes_unrelated_default(self):
+        def fake(args, *extra):
+            if args == ["lpstat", "-v"]:
+                return "device for Unrelated: ipp://192.168.1.2/ipp/print\ndevice for Brother: ipp://192.168.1.146/ipp/print\n"
+            return "Unrelated-1 user 100 date\nBrother-2 user 200 date\n"
+        with patch("brother_studio.backend.command", fake):
+            self.backend.refresh_printer()
+            await_idle(self.backend)
+        self.assertEqual(self.backend.queues, ["Brother"])
+        self.assertEqual([j["id"] for j in self.backend.jobs], ["Brother-2"])
+
+    def test_print_options_and_range_validation(self):
+        self.backend._queues = [{"name": "Brother", "uri": "ipp://192.168.1.146/ipp/print"}]
+        self.backend._print_file = "/tmp/file with spaces.pdf"
+        calls = []
+        def fake(args):
+            calls.append(args)
+            return "request id is Brother-3"
+        with patch("brother_studio.backend.command", fake):
+            self.backend.printDocument("Brother", 2, True, "A4", "1-3,5")
+            await_idle(self.backend)
+        self.assertIn("sides=two-sided-long-edge", calls[0])
+        self.assertEqual(calls[0][-1], "/tmp/file with spaces.pdf")
+        self.backend.printDocument("Brother", 1, True, "A4", "-x ; bad")
+        self.assertTrue(self.backend.error)
+        self.assertFalse(self.backend.busy)
+
+    def test_qml_all_workspaces_render(self):
+        engine = QQmlApplicationEngine()
+        engine.rootContext().setContextProperty("studio", self.backend)
+        engine.load(QUrl.fromLocalFile(str(Path(__file__).resolve().parents[1] / "brother_studio/ui/Main.qml")))
+        self.assertEqual(len(engine.rootObjects()), 1)
+        window = engine.rootObjects()[0]
+        window.setProperty("reducedMotion", True)
+        for section in range(4):
+            window.setProperty("section", section)
+            for _ in range(10):
+                APP.processEvents()
+                time.sleep(0.01)
+            self.assertFalse(window.grabWindow().isNull())
+        window.setProperty("closingConfirmed", True)
+        window.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
