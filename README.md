@@ -10,11 +10,16 @@ The configured address is **192.168.1.146**. Documents stay local.
 ./run.sh
 ```
 
-Qt/Python dependencies are isolated in `.venv`. System prerequisites on Omarchy:
+System prerequisites on Omarchy:
 
 ```sh
-omarchy pkg add sane sane-airscan cups
+omarchy pkg add sane sane-airscan cups pyside6 python-pillow
 ```
+
+With `pyside6` and `python-pillow` installed, `run.sh` uses the system Python, which
+pacman keeps in step with those packages. Without them it falls back to a `.venv`
+built by `setup.sh` from `/usr/bin/python3`, and rebuilds that venv automatically if
+a Python upgrade breaks it.
 
 Add an application launcher entry with `./install.sh`. Keep this checkout in place;
 the launcher points to its `run.sh`. Remove the entry by deleting
